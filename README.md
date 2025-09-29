@@ -1,25 +1,25 @@
-# Observability Stack no Kubernetes Local
+# Kubernetes Observability Stack
 
-Este projeto demonstra como configurar uma stack completa de observabilidade em um cluster Kubernetes local usando Kind, incluindo Prometheus, Grafana, Jaeger e outras ferramentas essenciais.
+Complete observability stack implementation for local Kubernetes environments using Kind. This project provides a comprehensive monitoring, tracing, and alerting solution with industry-standard tools.
 
-## 🛠️ Tecnologias Utilizadas
+## Technology Stack
 
-- **Kind** - Kubernetes local
-- **Prometheus** - Coleta de métricas
-- **Grafana** - Visualização de dados
-- **Jaeger** - Distributed tracing
-- **Alertmanager** - Gerenciamento de alertas
-- **Node Exporter** - Métricas do sistema
-- **Helm** - Gerenciamento de pacotes Kubernetes
+- **Kind** - Local Kubernetes cluster management
+- **Prometheus** - Metrics collection and time-series database
+- **Grafana** - Data visualization and dashboard platform
+- **Jaeger** - Distributed tracing system
+- **Alertmanager** - Alert handling and notification routing
+- **Node Exporter** - System and hardware metrics collection
+- **Helm** - Kubernetes package management
 
-## 📋 Pré-requisitos
+## Prerequisites
 
-- Docker
-- Kind
-- kubectl
-- Helm
+- Docker Engine
+- Kind (Kubernetes in Docker)
+- kubectl CLI
+- Helm package manager
 
-## 🚀 Instalação dos Pré-requisitos
+## Prerequisites Installation
 
 ### Instalando Kind
 ```bash
@@ -50,9 +50,9 @@ curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 helm version
 ```
 
-## 🔧 Como usar
+## Usage Guide
 
-### 1. Criar o cluster Kubernetes local
+### 1. Create Local Kubernetes Cluster
 ```bash
 # Criar cluster com configuração personalizada
 kind create cluster --config=kind-config.yaml --name=observability
@@ -61,53 +61,49 @@ kind create cluster --config=kind-config.yaml --name=observability
 kubectl cluster-info --context kind-observability
 ```
 
-### 2. Instalar a stack de observabilidade
+### 2. Deploy Observability Stack
 ```bash
-# Executar script de instalação
+# Execute installation script
 ./setup-observability.sh
 ```
 
-### 3. Acessar as aplicações
+### 3. Access Applications
 
 - **Grafana**: http://localhost:3000 (admin/admin)
-- **Prometheus**: http://localhost:9090  
+- **Prometheus**: http://localhost:9090
 - **Jaeger**: http://localhost:16686
 - **Alertmanager**: http://localhost:9093
 
-### 4. Limpar ambiente
+### 4. Cleanup Environment
 ```bash
-# Remover cluster
+# Remove cluster
 kind delete cluster --name=observability
 ```
 
-## 📊 Dashboards Inclusos
+## Included Dashboards
 
 - **Kubernetes Cluster Overview**
-- **Node Exporter Full**
-- **Prometheus Stats**
-- **Jaeger Tracing**
+- **Node Exporter System Metrics**
+- **Prometheus Internal Stats**
+- **Jaeger Tracing Analysis**
 
-## 🔍 Monitoramento
+## Monitoring Coverage
 
-O projeto inclui:
-- ✅ Métricas de sistema (CPU, memória, disco, rede)
-- ✅ Métricas de aplicação
-- ✅ Distributed tracing
-- ✅ Alertas configurados
-- ✅ Logs centralizados
+This implementation provides:
+- System metrics (CPU, memory, disk, network)
+- Application performance metrics
+- Distributed tracing capabilities
+- Configurable alerting rules
+- Centralized log aggregation
 
-## 🤝 Contribuindo
+## Contributing
 
-1. Fork o projeto
-2. Crie uma branch para sua feature (`git checkout -b feature/AmazingFeature`)
-3. Commit suas mudanças (`git commit -m 'Add some AmazingFeature'`)
-4. Push para a branch (`git push origin feature/AmazingFeature`)  
-5. Abra um Pull Request
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
-## 📝 Licença
+## License
 
-Este projeto está sob a licença MIT. Veja o arquivo [LICENSE](LICENSE) para mais detalhes.
-
----
-
-⭐️ **Se este projeto foi útil para você, considere dar uma estrela!**
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.

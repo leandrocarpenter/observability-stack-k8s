@@ -2,9 +2,9 @@
 
 set -e
 
-echo "🧹 Limpando Stack de Observabilidade..."
+echo "Cleaning up Observability Stack..."
 
-# Cores para output
+# Colors for output formatting
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -18,30 +18,30 @@ warn() {
     echo -e "${YELLOW}[WARN]${NC} $1"
 }
 
-# Perguntar confirmação
-read -p "Tem certeza que deseja remover toda a stack de observabilidade? (y/N): " -n 1 -r
+# Confirmation prompt
+read -p "Are you sure you want to remove the entire observability stack? (y/N): " -n 1 -r
 echo
 if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    echo "Operação cancelada."
+    echo "Operation cancelled."
     exit 0
 fi
 
-# Remover releases Helm
-log "Removendo releases Helm..."
-helm uninstall prometheus-stack -n observability || warn "Prometheus stack não encontrado"
-helm uninstall jaeger -n observability || warn "Jaeger não encontrado"
+# Remove Helm releases
+log "Removing Helm releases..."
+helm uninstall prometheus-stack -n observability || warn "Prometheus stack not found"
+helm uninstall jaeger -n observability || warn "Jaeger not found"
 
-# Remover aplicações de exemplo
-log "Removendo aplicações de exemplo..."
-kubectl delete -f examples/ || warn "Nenhuma aplicação de exemplo encontrada"
+# Remove sample applications
+log "Removing sample applications..."
+kubectl delete -f examples/ || warn "No sample applications found"
 
-# Remover namespace (isso remove todos os recursos)
-log "Removendo namespace 'observability'..."
-kubectl delete namespace observability || warn "Namespace não encontrado"
+# Remove namespace (removes all resources)
+log "Removing 'observability' namespace..."
+kubectl delete namespace observability || warn "Namespace not found"
 
 echo ""
-log "✅ Limpeza concluída!"
+log "Cleanup completed successfully"
 echo ""
-echo -e "${YELLOW}💡 Para remover completamente o cluster Kind:${NC}"
+echo -e "${YELLOW}To completely remove the Kind cluster:${NC}"
 echo "   kind delete cluster --name=observability"
 echo ""

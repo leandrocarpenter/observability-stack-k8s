@@ -2,16 +2,16 @@
 
 set -e
 
-echo "🚀 Configurando Stack de Observabilidade no Kubernetes..."
+echo "Setting up Kubernetes Observability Stack..."
 
-# Cores para output
+# Colors for output formatting
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Função para log colorido
+# Logging functions
 log() {
     echo -e "${GREEN}[INFO]${NC} $1"
 }
@@ -24,28 +24,28 @@ error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# Verificar se o cluster Kind está rodando
+# Verify Kind cluster is running
 if ! kubectl cluster-info --context kind-observability &> /dev/null; then
-    error "Cluster Kind 'observability' não encontrado!"
-    echo "Execute: kind create cluster --config=kind-config.yaml --name=observability"
+    error "Kind cluster 'observability' not found!"
+    echo "Run: kind create cluster --config=kind-config.yaml --name=observability"
     exit 1
 fi
 
-log "Cluster Kind encontrado ✅"
+log "Kind cluster verified successfully"
 
-# Adicionar repositórios Helm
-log "Adicionando repositórios Helm..."
+# Add Helm repositories
+log "Adding Helm repositories..."
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 helm repo add grafana https://grafana.github.io/helm-charts
 helm repo add jaegertracing https://jaegertracing.github.io/helm-charts
 helm repo update
 
-# Criar namespace para observabilidade
-log "Criando namespace 'observability'..."
+# Create observability namespace
+log "Creating 'observability' namespace..."
 kubectl create namespace observability --dry-run=client -o yaml | kubectl apply -f -
 
-# Instalar Prometheus Stack (inclui Prometheus, Grafana, Alertmanager)
-log "Instalando Prometheus Stack..."
+# Install Prometheus Stack (includes Prometheus, Grafana, Alertmanager)
+log "Installing Prometheus Stack..."
 helm upgrade --install prometheus-stack prometheus-community/kube-prometheus-stack \
     --namespace observability \
     --set prometheus.service.type=NodePort \
@@ -57,37 +57,37 @@ helm upgrade --install prometheus-stack prometheus-community/kube-prometheus-sta
     --set grafana.adminPassword=admin \
     --wait --timeout=600s
 
-# Instalar Jaeger
-log "Instalando Jaeger..."
+# Install Jaeger
+log "Installing Jaeger..."
 helm upgrade --install jaeger jaegertracing/jaeger \
     --namespace observability \
     --set query.service.type=NodePort \
     --set query.service.nodePort=31686 \
     --wait --timeout=300s
 
-# Aguardar todos os pods ficarem prontos
-log "Aguardando todos os pods ficarem prontos..."
+# Wait for all pods to be ready
+log "Waiting for all pods to become ready..."
 kubectl wait --for=condition=ready pod --all -n observability --timeout=600s
 
-# Aplicar dashboards customizados
-log "Aplicando dashboards customizados..."
-kubectl apply -f dashboards/ -n observability || warn "Nenhum dashboard customizado encontrado"
+# Apply custom dashboards
+log "Applying custom dashboards..."
+kubectl apply -f dashboards/ -n observability || warn "No custom dashboards found"
 
-# Aplicar aplicação de exemplo para demonstração
-log "Instalando aplicação de exemplo..."
-kubectl apply -f examples/ || warn "Nenhuma aplicação de exemplo encontrada"
+# Deploy sample application
+log "Deploying sample application..."
+kubectl apply -f examples/ || warn "No sample applications found"
 
 echo ""
-log "🎉 Stack de Observabilidade instalada com sucesso!"
+log "Observability Stack installation completed successfully"
 echo ""
-echo -e "${BLUE}📊 Acesse as aplicações:${NC}"
+echo -e "${BLUE}Application Access:${NC}"
 echo -e "  • Grafana:      ${GREEN}http://localhost:3000${NC} (admin/admin)"
 echo -e "  • Prometheus:   ${GREEN}http://localhost:9090${NC}"
 echo -e "  • Jaeger:       ${GREEN}http://localhost:16686${NC}"
 echo -e "  • Alertmanager: ${GREEN}http://localhost:9093${NC}"
 echo ""
-echo -e "${YELLOW}💡 Dicas:${NC}"
-echo "  • Use 'kubectl get pods -n observability' para verificar o status"
-echo "  • Use 'kubectl logs -f -n observability <pod-name>' para ver logs"
-echo "  • Use './cleanup.sh' para remover tudo"
+echo -e "${YELLOW}Useful Commands:${NC}"
+echo "  • kubectl get pods -n observability  # Check pod status"
+echo "  • kubectl logs -f -n observability <pod-name>  # View logs"
+echo "  • ./cleanup.sh  # Remove all resources"
 echo ""
