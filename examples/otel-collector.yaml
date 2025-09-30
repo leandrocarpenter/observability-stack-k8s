@@ -34,12 +34,22 @@ data:
       memory_limiter:
         limit_mib: 512
         check_interval: 1s
+      transform/add_collector_info:
+        trace_statements:
+          - context: resource
+            statements:
+              - set(attributes["otel.collector.name"], "observability-collector")
+              - set(attributes["otel.collector.version"], "0.89.0")
+              - set(attributes["otel.collector.processed"], true)
+          - context: span
+            statements:
+              - set(attributes["processed_by_collector"], "otel-collector")
+              - set(attributes["collector.pipeline"], "traces")
+              - set(attributes["collector.processed_at"], Now())
 
     exporters:
-      otlp/jaeger:
-        endpoint: jaeger-collector.observability.svc.cluster.local:14250
-        tls:
-          insecure: true
+      file:
+        path: /tmp/collector-traces.json
       prometheus:
         endpoint: "0.0.0.0:8889"
       logging:
@@ -58,8 +68,8 @@ data:
       pipelines:
         traces:
           receivers: [otlp, jaeger]
-          processors: [memory_limiter, batch]
-          exporters: [otlp/jaeger, logging]
+          processors: [memory_limiter, transform/add_collector_info, batch]
+          exporters: [file, logging]
         metrics:
           receivers: [otlp, prometheus]
           processors: [memory_limiter, batch]
@@ -85,7 +95,7 @@ spec:
     spec:
       containers:
       - name: otel-collector
-        image: otel/opentelemetry-collector-contrib:0.88.0
+        image: otel/opentelemetry-collector-contrib:0.89.0
         command:
           - "/otelcol-contrib"
           - "--config=/conf/config.yaml"
@@ -113,6 +123,19 @@ spec:
           name: pprof
         - containerPort: 55679  # zpages
           name: zpages
+        env:
+        - name: HOSTNAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: NODE_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
         resources:
           requests:
             memory: "128Mi"
