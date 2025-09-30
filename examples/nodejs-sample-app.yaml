@@ -33,78 +33,187 @@ spec:
         args:
           - -c
           - |
-            echo 'const express = require("express");
-            const promClient = require("prom-client");
+            cd /tmp
             
+            # Criar package.json
+            cat > package.json << 'EOF'
+            {
+              "name": "observability-demo",
+              "version": "1.0.0",
+              "main": "app.js",
+              "dependencies": {
+                "express": "^4.18.2",
+                "jaeger-client": "^3.19.0"
+              }
+            }
+            EOF
+            
+            # Criar configuração Jaeger
+            cat > tracing.js << 'EOF'
+            const initJaegerTracer = require('jaeger-client').initTracer;
+            
+            // Configuração do Jaeger
+            const config = {
+              serviceName: 'nodejs-observability-demo',
+              sampler: {
+                type: 'const',
+                param: 1
+              },
+              reporter: {
+                collectorEndpoint: 'http://jaeger-collector.observability.svc.cluster.local:14268/api/traces',
+                logSpans: true
+              }
+            };
+            
+            // Opções do tracer
+            const options = {
+              tags: {
+                'nodejs-observability-demo.version': '1.0.0'
+              }
+            };
+            
+            // Inicializar tracer
+            const tracer = initJaegerTracer(config, options);
+            console.log('Jaeger tracing initialized');
+            
+            module.exports = tracer;
+            EOF
+            
+            # Criar aplicação
+            cat > app.js << 'EOF'
+            // Inicializar tracing antes de qualquer outra coisa
+            const tracer = require('./tracing');
+            
+            const express = require('express');
             const app = express();
             const port = 3000;
             
-            // Configurar métricas Prometheus
-            const collectDefaultMetrics = promClient.collectDefaultMetrics;
-            collectDefaultMetrics({ timeout: 5000 });
+            let requestCount = 0;
+            const startTime = Date.now();
             
-            const httpRequestsTotal = new promClient.Counter({
-              name: "http_requests_total",
-              help: "Total HTTP requests",
-              labelNames: ["method", "route", "status_code"]
-            });
-            
-            const httpRequestDuration = new promClient.Histogram({
-              name: "http_request_duration_seconds",
-              help: "HTTP request duration in seconds",
-              labelNames: ["method", "route"]
-            });
-            
-            // Middleware para métricas
+            // Middleware para contar requests e criar spans
             app.use((req, res, next) => {
-              const start = Date.now();
+              requestCount++;
+              console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
               
-              res.on("finish", () => {
-                const duration = (Date.now() - start) / 1000;
-                httpRequestsTotal.inc({
-                  method: req.method,
-                  route: req.route?.path || req.path,
-                  status_code: res.statusCode
-                });
-                httpRequestDuration.observe({
-                  method: req.method,
-                  route: req.route?.path || req.path
-                }, duration);
+              // Criar span para a requisição
+              const span = tracer.startSpan(`${req.method} ${req.path}`);
+              span.setTag('http.method', req.method);
+              span.setTag('http.url', req.path);
+              span.setTag('request.count', requestCount);
+              
+              // Adicionar span ao contexto da requisição
+              req.span = span;
+              
+              // Finalizar span quando a resposta terminar
+              res.on('finish', () => {
+                span.setTag('http.status_code', res.statusCode);
+                span.finish();
               });
               
               next();
             });
             
-            // Rotas
-            app.get("/", (req, res) => {
-              res.json({ message: "Hello from Node.js observability demo!", timestamp: new Date() });
+            // Rotas da aplicação
+            app.get('/', (req, res) => {
+              res.json({ 
+                message: 'Hello from Node.js observability demo!', 
+                timestamp: new Date(),
+                requestCount: requestCount
+              });
             });
             
-            app.get("/health", (req, res) => {
-              res.json({ status: "healthy", uptime: process.uptime() });
+            app.get('/health', (req, res) => {
+              res.json({ 
+                status: 'healthy', 
+                uptime: process.uptime(),
+                memory: process.memoryUsage(),
+                timestamp: new Date()
+              });
             });
             
-            app.get("/metrics", (req, res) => {
-              res.set("Content-Type", promClient.register.contentType);
-              res.end(promClient.register.metrics());
+            app.get('/metrics', (req, res) => {
+              const uptime = process.uptime();
+              const memory = process.memoryUsage();
+              
+              const metrics = `# HELP http_requests_total Total HTTP requests
+            # TYPE http_requests_total counter
+            http_requests_total ${requestCount}
+            
+            # HELP process_uptime_seconds Process uptime in seconds
+            # TYPE process_uptime_seconds gauge
+            process_uptime_seconds ${uptime}
+            
+            # HELP process_memory_usage_bytes Memory usage in bytes
+            # TYPE process_memory_usage_bytes gauge
+            process_memory_usage_bytes{type="rss"} ${memory.rss}
+            process_memory_usage_bytes{type="heapTotal"} ${memory.heapTotal}
+            process_memory_usage_bytes{type="heapUsed"} ${memory.heapUsed}
+            `;
+              
+              res.set('Content-Type', 'text/plain');
+              res.send(metrics);
             });
             
-            // Rota que simula erro ocasional
-            app.get("/random", (req, res) => {
+            app.get('/random', (req, res) => {
               if (Math.random() < 0.1) {
-                res.status(500).json({ error: "Random error occurred" });
+                res.status(500).json({ error: 'Random error occurred', timestamp: new Date() });
               } else {
                 res.json({ random: Math.random(), timestamp: new Date() });
               }
             });
             
-            app.listen(port, () => {
-              console.log(`App running on port ${port}`);
-            });' > /tmp/app.js
+            app.get('/load', (req, res) => {
+              // Criar span filho para operação de carga
+              const childSpan = tracer.startSpan('heavy-computation', {
+                childOf: req.span
+              });
+              
+              const start = Date.now();
+              // Simular processamento pesado
+              let sum = 0;
+              for (let i = 0; i < 1000000; i++) {
+                sum += Math.random();
+              }
+              const duration = Date.now() - start;
+              
+              // Adicionar informações ao span
+              childSpan.setTag('computation.iterations', 1000000);
+              childSpan.setTag('computation.duration_ms', duration);
+              childSpan.setTag('computation.result', sum);
+              childSpan.finish();
+              
+              res.json({ 
+                message: 'Load test completed', 
+                duration: duration,
+                result: sum,
+                timestamp: new Date()
+              });
+            });
             
-            cd /tmp
-            npm init -y
-            npm install express prom-client
+            app.get('/info', (req, res) => {
+              res.json({ 
+                app: 'Node.js Observability Demo',
+                version: '1.0.0',
+                env: process.env.NODE_ENV || 'development',
+                nodeVersion: process.version,
+                uptime: process.uptime(),
+                memory: process.memoryUsage(),
+                timestamp: new Date(),
+                pid: process.pid
+              });
+            });
+            
+            app.listen(port, '0.0.0.0', () => {
+              console.log(`App running on port ${port}`);
+              console.log(`Health check: http://localhost:${port}/health`);
+              console.log(`Metrics: http://localhost:${port}/metrics`);
+              console.log(`Ready to accept connections!`);
+            });
+            EOF
+            
+            # Instalar dependências e iniciar
+            npm install express jaeger-client
             node app.js
         resources:
           requests:

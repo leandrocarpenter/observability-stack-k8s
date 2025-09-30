@@ -81,7 +81,16 @@ FORCE_UPDATE=true ./setup-observability.sh
 - **Jaeger**: http://localhost:16686
 - **Alertmanager**: http://localhost:9093
 
-### 4. Check Status
+### 4. Demo Applications
+```bash
+# Test Node.js application with metrics
+./demo-nodejs-app.sh
+
+# Demo distributed tracing with Jaeger
+./demo-jaeger-tracing.sh
+```
+
+### 5. Check Status
 ```bash
 # Comprehensive status check
 ./status-check.sh
@@ -90,7 +99,8 @@ FORCE_UPDATE=true ./setup-observability.sh
 make status
 ```
 
-### 5. Cleanup Environment
+### 6. Cleanup Environment
+
 ```bash
 # Remove cluster
 kind delete cluster --name=observability

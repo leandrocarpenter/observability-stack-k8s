@@ -107,3 +107,13 @@ force-setup: ## Force setup with repository updates
 	@echo "$(GREEN)Running setup with forced updates...$(NC)"
 	chmod +x setup-observability.sh
 	FORCE_UPDATE=true ./setup-observability.sh
+
+demo-app: ## Deploy and test Node.js demo application
+	@echo "$(GREEN)Running Node.js application demo...$(NC)"
+	chmod +x demo-nodejs-app.sh
+	./demo-nodejs-app.sh
+
+demo-tracing: ## Demonstrate distributed tracing with Jaeger
+	@echo "$(GREEN)Running Jaeger tracing demonstration...$(NC)"
+	chmod +x demo-jaeger-tracing.sh
+	./demo-jaeger-tracing.sh
