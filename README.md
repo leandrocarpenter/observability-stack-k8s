@@ -63,8 +63,15 @@ kubectl cluster-info --context kind-observability
 
 ### 2. Deploy Observability Stack
 ```bash
-# Execute installation script
+# Fast setup (optimized with caching)
 ./setup-observability.sh
+
+# Or using Make
+make fast-setup
+
+# Force repository updates (slower)
+FORCE_UPDATE=true ./setup-observability.sh
+# Or: make force-setup
 ```
 
 ### 3. Access Applications
@@ -74,11 +81,32 @@ kubectl cluster-info --context kind-observability
 - **Jaeger**: http://localhost:16686
 - **Alertmanager**: http://localhost:9093
 
-### 4. Cleanup Environment
+### 4. Check Status
+```bash
+# Comprehensive status check
+./status-check.sh
+
+# Or using Make
+make status
+```
+
+### 5. Cleanup Environment
 ```bash
 # Remove cluster
 kind delete cluster --name=observability
 ```
+
+## Performance Optimizations
+
+The setup script includes several optimizations:
+
+- **Repository caching** - Skips Helm repo updates if repositories exist
+- **Installation checking** - Skips installation if services are already running
+- **Reduced timeouts** - Faster failure detection (300s vs 600s)
+- **Memory storage** - Jaeger uses memory instead of Cassandra for faster startup
+- **Atomic operations** - Automatic rollback on installation failures
+
+Use `FORCE_UPDATE=true` environment variable to force repository updates when needed.
 
 ## Included Dashboards
 

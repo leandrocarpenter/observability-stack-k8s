@@ -36,7 +36,12 @@ cleanup: ## Clean observability stack resources
 	chmod +x cleanup.sh
 	./cleanup.sh
 
-status: ## Check pod status
+status: ## Check comprehensive status
+	@echo "$(GREEN)Running comprehensive status check...$(NC)"
+	chmod +x status-check.sh
+	./status-check.sh
+
+quick-status: ## Quick pod and service status
 	@echo "$(GREEN)Pod Status:$(NC)"
 	kubectl get pods -n $(NAMESPACE)
 	@echo ""
@@ -92,3 +97,13 @@ demo: ## Run complete demo (create cluster + install stack)
 	@echo "  • Prometheus: http://localhost:9090"
 	@echo "  • Jaeger: http://localhost:16686"
 	@echo ""
+
+fast-setup: ## Fast setup (skip repo updates if possible)
+	@echo "$(GREEN)Running optimized setup...$(NC)"
+	chmod +x setup-observability.sh
+	./setup-observability.sh
+
+force-setup: ## Force setup with repository updates
+	@echo "$(GREEN)Running setup with forced updates...$(NC)"
+	chmod +x setup-observability.sh
+	FORCE_UPDATE=true ./setup-observability.sh
