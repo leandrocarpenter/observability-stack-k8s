@@ -229,11 +229,16 @@ if [ -d "examples" ] && [ "$(ls -A examples 2>/dev/null)" ]; then
     kubectl apply -f examples/
     
     # Wait for application deployment
+    # Deploy OpenTelemetry Collector first
+    log "Deploying OpenTelemetry Collector..."
+    kubectl apply -f examples/otel-collector.yaml
+    kubectl rollout status deployment otel-collector -n observability --timeout=300s
+    
     log "Waiting for application to be ready..."
     kubectl rollout status deployment sample-nodejs-app -n observability --timeout=300s
     
     # Auto-demonstration of tracing
-    log "Starting automatic tracing demonstration..."
+    log "Starting automatic tracing demonstration with OpenTelemetry..."
     demo_tracing
 else
     skip "No sample applications found"

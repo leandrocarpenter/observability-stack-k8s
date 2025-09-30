@@ -43,72 +43,82 @@ spec:
               "main": "app.js",
               "dependencies": {
                 "express": "^4.18.2",
-                "jaeger-client": "^3.19.0"
+                "@opentelemetry/api": "^1.6.0",
+                "@opentelemetry/sdk-node": "^0.45.0",
+                "@opentelemetry/exporter-trace-otlp-http": "^0.45.0",
+                "@opentelemetry/resources": "^1.17.0",
+                "@opentelemetry/semantic-conventions": "^1.17.0"
               }
             }
             EOF
             
-            # Criar configuração Jaeger
+            # Criar configuração OpenTelemetry simplificada
             cat > tracing.js << 'EOF'
-            const initJaegerTracer = require('jaeger-client').initTracer;
+            const { NodeSDK } = require('@opentelemetry/sdk-node');
+            const { OTLPTraceExporter } = require('@opentelemetry/exporter-trace-otlp-http');
+            const { Resource } = require('@opentelemetry/resources');
+            const { SemanticResourceAttributes } = require('@opentelemetry/semantic-conventions');
             
-            // Configuração do Jaeger
-            const config = {
-              serviceName: 'nodejs-observability-demo',
-              sampler: {
-                type: 'const',
-                param: 1
-              },
-              reporter: {
-                collectorEndpoint: 'http://jaeger-collector.observability.svc.cluster.local:14268/api/traces',
-                logSpans: true
-              }
-            };
+            // Configurar exportador OTLP
+            const traceExporter = new OTLPTraceExporter({
+              url: 'http://otel-collector.observability.svc.cluster.local:4318/v1/traces',
+            });
             
-            // Opções do tracer
-            const options = {
-              tags: {
-                'nodejs-observability-demo.version': '1.0.0'
-              }
-            };
+            // Configurar SDK mínimo
+            const sdk = new NodeSDK({
+              resource: new Resource({
+                [SemanticResourceAttributes.SERVICE_NAME]: 'nodejs-observability-demo',
+                [SemanticResourceAttributes.SERVICE_VERSION]: '1.0.0',
+              }),
+              traceExporter,
+            });
             
-            // Inicializar tracer
-            const tracer = initJaegerTracer(config, options);
-            console.log('Jaeger tracing initialized');
+            // Inicializar tracing
+            sdk.start();
+            console.log('OpenTelemetry SDK initialized');
             
-            module.exports = tracer;
+            module.exports = sdk;
             EOF
             
             # Criar aplicação
             cat > app.js << 'EOF'
-            // Inicializar tracing antes de qualquer outra coisa
-            const tracer = require('./tracing');
+            // Inicializar OpenTelemetry SDK antes de qualquer outra coisa
+            require('./tracing');
             
             const express = require('express');
+            const { trace } = require('@opentelemetry/api');
             const app = express();
             const port = 3000;
             
             let requestCount = 0;
             const startTime = Date.now();
             
-            // Middleware para contar requests e criar spans
+            // Obter tracer
+            const tracer = trace.getTracer('nodejs-app', '1.0.0');
+            
+            // Middleware simplificado
             app.use((req, res, next) => {
               requestCount++;
               console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
               
-              // Criar span para a requisição
-              const span = tracer.startSpan(`${req.method} ${req.path}`);
-              span.setTag('http.method', req.method);
-              span.setTag('http.url', req.path);
-              span.setTag('request.count', requestCount);
+              // Criar span customizado
+              const span = tracer.startSpan(`${req.method} ${req.path}`, {
+                attributes: {
+                  'http.method': req.method,
+                  'http.url': req.path,
+                  'request.count': requestCount,
+                }
+              });
               
               // Adicionar span ao contexto da requisição
               req.span = span;
               
               // Finalizar span quando a resposta terminar
               res.on('finish', () => {
-                span.setTag('http.status_code', res.statusCode);
-                span.finish();
+                span.setAttributes({
+                  'http.status_code': res.statusCode,
+                });
+                span.end();
               });
               
               next();
@@ -166,7 +176,11 @@ spec:
             app.get('/load', (req, res) => {
               // Criar span filho para operação de carga
               const childSpan = tracer.startSpan('heavy-computation', {
-                childOf: req.span
+                parent: req.span,
+                attributes: {
+                  'operation.type': 'cpu_intensive',
+                  'computation.iterations': 1000000,
+                }
               });
               
               const start = Date.now();
@@ -178,10 +192,12 @@ spec:
               const duration = Date.now() - start;
               
               // Adicionar informações ao span
-              childSpan.setTag('computation.iterations', 1000000);
-              childSpan.setTag('computation.duration_ms', duration);
-              childSpan.setTag('computation.result', sum);
-              childSpan.finish();
+              childSpan.setAttributes({
+                'computation.duration_ms': duration,
+                'computation.result': sum,
+                'computation.completed': true,
+              });
+              childSpan.end();
               
               res.json({ 
                 message: 'Load test completed', 
@@ -212,8 +228,12 @@ spec:
             });
             EOF
             
-            # Instalar dependências e iniciar
-            npm install express jaeger-client
+            # Instalar dependências básicas primeiro
+            echo "Installing basic dependencies..."
+            npm install express
+            echo "Installing OpenTelemetry (minimal set)..."
+            npm install @opentelemetry/api @opentelemetry/sdk-node @opentelemetry/exporter-trace-otlp-http @opentelemetry/resources @opentelemetry/semantic-conventions --no-optional
+            echo "Starting application with OpenTelemetry instrumentation..."
             node app.js
         resources:
           requests:
