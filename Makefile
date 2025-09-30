@@ -108,12 +108,21 @@ force-setup: ## Force setup with repository updates
 	chmod +x setup-observability.sh
 	FORCE_UPDATE=true ./setup-observability.sh
 
-demo-app: ## Deploy and test Node.js demo application
-	@echo "$(GREEN)Running Node.js application demo...$(NC)"
-	chmod +x demo-nodejs-app.sh
-	./demo-nodejs-app.sh
+generate-traces: ## Generate additional traces for testing
+	@echo "$(GREEN)Generating additional traces...$(NC)"
+	chmod +x generate-traces.sh
+	./generate-traces.sh
 
-demo-tracing: ## Demonstrate distributed tracing with Jaeger
-	@echo "$(GREEN)Running Jaeger tracing demonstration...$(NC)"
-	chmod +x demo-jaeger-tracing.sh
-	./demo-jaeger-tracing.sh
+demo: ## Complete demo (cluster + stack + auto-tracing)
+	@echo "$(GREEN)Starting complete demo with auto-tracing...$(NC)"
+	$(MAKE) create-cluster
+	sleep 10
+	$(MAKE) setup
+	@echo ""
+	@echo "$(GREEN)Demo ready with active traces!$(NC)"
+	@echo "$(YELLOW)Access:$(NC)"
+	@echo "  • Grafana: http://localhost:3000 (admin/admin)"
+	@echo "  • Prometheus: http://localhost:9090"
+	@echo "  • Jaeger: http://localhost:16686 ← Traces active!"
+	@echo "  • Demo App: http://localhost:3001"
+	@echo ""

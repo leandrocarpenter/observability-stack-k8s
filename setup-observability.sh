@@ -1,4 +1,4 @@
-#!/bin/bash
+sim#!/bin/bash
 
 set -e
 
@@ -26,6 +26,67 @@ error() {
 
 skip() {
     echo -e "${BLUE}[SKIP]${NC} $1"
+}
+
+# Automatic tracing demonstration
+demo_tracing() {
+    log "Demonstrating distributed tracing with Jaeger..."
+    
+    # Check if application is running
+    if ! kubectl get pods -n observability -l app=sample-nodejs-app --no-headers | grep -q "Running"; then
+        warn "Node.js application not running, skipping tracing demo"
+        return 1
+    fi
+    
+    # Port-forward for application (in background)
+    log "Setting up port-forwards..."
+    kubectl port-forward -n observability svc/sample-nodejs-app-service 3001:3000 > /dev/null 2>&1 &
+    APP_PF_PID=$!
+    
+    # Port-forward for Jaeger UI (in background)
+    kubectl port-forward -n observability svc/jaeger-query 16686:80 > /dev/null 2>&1 &
+    JAEGER_PF_PID=$!
+    
+    sleep 5
+    
+    log "Generating traces by calling application endpoints..."
+    
+    # Generate traces with different endpoints
+    for i in {1..3}; do
+        echo "  → Generating trace set $i/3"
+        curl -s http://localhost:3001/ > /dev/null 2>&1 || true
+        curl -s http://localhost:3001/health > /dev/null 2>&1 || true
+        curl -s http://localhost:3001/load > /dev/null 2>&1 || true
+        curl -s http://localhost:3001/info > /dev/null 2>&1 || true
+        sleep 1
+    done
+    
+    # Wait for traces to be processed
+    sleep 3
+    
+    # Check traces
+    log "Checking generated traces..."
+    TRACE_COUNT=$(curl -s "http://localhost:16686/api/traces?service=nodejs-observability-demo&limit=50" 2>/dev/null | jq '.data | length' 2>/dev/null || echo "0")
+    
+    if [ "$TRACE_COUNT" -gt "0" ]; then
+        log "Successfully generated $TRACE_COUNT traces!"
+    else
+        warn "No traces found, but services are accessible"
+    fi
+    
+    # Keep port-forwards running for demo
+    echo ""
+    echo -e "${BLUE}Tracing Demo Active:${NC}"
+    echo -e "  • Jaeger UI:    ${GREEN}http://localhost:16686${NC}"
+    echo -e "  • Node.js App:  ${GREEN}http://localhost:3001${NC}"
+    echo -e "  • Service:      ${GREEN}nodejs-observability-demo${NC}"
+    echo ""
+    echo -e "${YELLOW}Generated traces for endpoints:${NC}"
+    echo "  • GET / - Main application endpoint"
+    echo "  • GET /health - Health check with system metrics"
+    echo "  • GET /load - Heavy computation (with child spans)"
+    echo "  • GET /info - Application information"
+    echo ""
 }
 
 # Verify Kind cluster is running
@@ -166,22 +227,35 @@ fi
 if [ -d "examples" ] && [ "$(ls -A examples 2>/dev/null)" ]; then
     log "Deploying sample application..."
     kubectl apply -f examples/
+    
+    # Wait for application deployment
+    log "Waiting for application to be ready..."
+    kubectl rollout status deployment sample-nodejs-app -n observability --timeout=300s
+    
+    # Auto-demonstration of tracing
+    log "Starting automatic tracing demonstration..."
+    demo_tracing
 else
     skip "No sample applications found"
 fi
 
 echo ""
-log "Observability Stack setup completed"
-echo ""
-echo -e "${BLUE}Application Access:${NC}"
+log "Observability Stack setup completed with tracing demo"
+echo -e "${BLUE}All Services Ready:${NC}"
 echo -e "  • Grafana:      ${GREEN}http://localhost:3000${NC} (admin/admin)"
 echo -e "  • Prometheus:   ${GREEN}http://localhost:9090${NC}"
-echo -e "  • Jaeger:       ${GREEN}http://localhost:16686${NC}"
+echo -e "  • Jaeger:       ${GREEN}http://localhost:16686${NC} ${YELLOW}← Traces active!${NC}"
+echo -e "  • Node.js Demo: ${GREEN}http://localhost:3001${NC}"
 echo -e "  • Alertmanager: ${GREEN}http://localhost:9093${NC}"
 echo ""
-echo -e "${YELLOW}Useful Commands:${NC}"
-echo "  • kubectl get pods -n observability  # Check pod status"
-echo "  • kubectl logs -f -n observability <pod-name>  # View logs"
+log "Stack is ready for observability demonstrations!"
+echo ""
+echo -e "${YELLOW}Quick Actions:${NC}"
+echo "  • Open Jaeger UI to see traces: ${GREEN}http://localhost:16686${NC}"
+echo "  • Test application: ${GREEN}curl http://localhost:3001/load${NC}"
+echo "  • View dashboards: ${GREEN}http://localhost:3000${NC}"
+echo ""
+echo -e "${YELLOW}Cleanup:${NC}"
 echo "  • ./cleanup.sh  # Remove all resources"
-echo "  • FORCE_UPDATE=true ./setup-observability.sh  # Force helm repo update"
+echo "  • kind delete cluster --name=observability  # Remove cluster"
 echo ""

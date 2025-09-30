@@ -50,47 +50,37 @@ curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 helm version
 ```
 
-## Usage Guide
+## 🚀 One-Command Setup
 
-### 1. Create Local Kubernetes Cluster
+### Complete Stack with Auto-Demo
 ```bash
-# Criar cluster com configuração personalizada
-kind create cluster --config=kind-config.yaml --name=observability
-
-# Verificar se o cluster está funcionando
-kubectl cluster-info --context kind-observability
-```
-
-### 2. Deploy Observability Stack
-```bash
-# Fast setup (optimized with caching)
+# Create cluster, install everything, and demo tracing automatically
 ./setup-observability.sh
-
-# Or using Make
-make fast-setup
-
-# Force repository updates (slower)
-FORCE_UPDATE=true ./setup-observability.sh
-# Or: make force-setup
 ```
 
-### 3. Access Applications
+**That's it!** 🎉 This single command will:
+- ✅ Create Kind cluster with custom configuration
+- ✅ Install complete observability stack (Prometheus, Grafana, Jaeger)
+- ✅ Deploy Node.js demo application with distributed tracing
+- ✅ Generate sample traces automatically
+- ✅ Start all port-forwards for immediate access
+
+### Access Everything (Ready After Setup)
 
 - **Grafana**: http://localhost:3000 (admin/admin)
 - **Prometheus**: http://localhost:9090
-- **Jaeger**: http://localhost:16686
+- **Jaeger**: http://localhost:16686 **← Traces already active!**
+- **Demo App**: http://localhost:3001
 - **Alertmanager**: http://localhost:9093
 
-### 4. Demo Applications
-```bash
-# Test Node.js application with metrics
-./demo-nodejs-app.sh
+### Generate More Traces (Optional)
 
-# Demo distributed tracing with Jaeger
-./demo-jaeger-tracing.sh
+```bash
+# Generate additional traces for testing
+./generate-traces.sh
 ```
 
-### 5. Check Status
+### Alternative Methods
 ```bash
 # Comprehensive status check
 ./status-check.sh
