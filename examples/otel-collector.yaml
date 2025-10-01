@@ -3,15 +3,26 @@ kind: ConfigMap
 metadata:
   name: otel-collector-config
   namespace: observability
+  labels:
+    app: otel-collector
+    component: config
 data:
   config.yaml: |
+    # OpenTelemetry Collector Configuration
+    # Purpose: Receive, process, and export observability data
+    # Author: Observability Stack K8s Project
+    # Version: 1.0.0
+
     receivers:
+      # OTLP receiver for OpenTelemetry Protocol
       otlp:
         protocols:
           grpc:
             endpoint: 0.0.0.0:4317
           http:
             endpoint: 0.0.0.0:4318
+
+      # Jaeger receiver for legacy Jaeger clients
       jaeger:
         protocols:
           grpc:
@@ -20,27 +31,42 @@ data:
             endpoint: 0.0.0.0:14268
           thrift_compact:
             endpoint: 0.0.0.0:6831
+
+      # Prometheus receiver for metrics scraping
       prometheus:
         config:
           scrape_configs:
-            - job_name: 'otel-collector'
+            - job_name: 'otel-collector-internal'
               static_configs:
                 - targets: ['localhost:8888']
+              scrape_interval: 30s
 
     processors:
+      # Memory limiter to prevent OOM
+      memory_limiter:
+        limit_mib: 512
+        spike_limit_mib: 128
+        check_interval: 5s
+
+      # Batch processor for performance optimization
       batch:
         timeout: 1s
         send_batch_size: 1024
-      memory_limiter:
-        limit_mib: 512
-        check_interval: 1s
-      transform/add_collector_info:
+        send_batch_max_size: 2048
+
+      # Transform processor to add collector identification
+      transform/add_collector_metadata:
+        error_mode: ignore
         trace_statements:
+          # Add resource-level attributes
           - context: resource
             statements:
               - set(attributes["otel.collector.name"], "observability-collector")
               - set(attributes["otel.collector.version"], "0.89.0")
+              - set(attributes["otel.collector.namespace"], "observability")
               - set(attributes["otel.collector.processed"], true)
+          
+          # Add span-level attributes for traceability
           - context: span
             statements:
               - set(attributes["processed_by_collector"], "otel-collector")
@@ -48,30 +74,71 @@ data:
               - set(attributes["collector.processed_at"], Now())
 
     exporters:
+      # OTLP exporter to Jaeger
       otlp/jaeger:
         endpoint: jaeger-collector.observability.svc.cluster.local:14250
         tls:
           insecure: true
+        retry_on_failure:
+          enabled: true
+          initial_interval: 1s
+          max_interval: 30s
+          max_elapsed_time: 5m
+        sending_queue:
+          enabled: true
+          num_consumers: 2
+          queue_size: 100
+
+      # Prometheus exporter for metrics
       prometheus:
         endpoint: "0.0.0.0:8889"
+        namespace: "otelcol"
+        send_timestamps: true
+        metric_expiration: 180m
+
+      # Logging exporter for debugging (can be disabled in production)
       logging:
-        loglevel: debug
+        verbosity: detailed
+        sampling_initial: 2
+        sampling_thereafter: 500
 
     extensions:
+      # Health check extension
       health_check:
         endpoint: 0.0.0.0:13133
+        check_collector_pipeline:
+          enabled: true
+          interval: 5m
+          exporter_failure_threshold: 5
+
+      # Performance profiling (disable in production)
       pprof:
         endpoint: 0.0.0.0:1777
+
+      # Diagnostic web pages
       zpages:
         endpoint: 0.0.0.0:55679
 
     service:
+      # Configure telemetry for the collector itself
+      telemetry:
+        logs:
+          level: info
+          development: false
+        metrics:
+          level: detailed
+          address: 0.0.0.0:8888
+
       extensions: [health_check, pprof, zpages]
+      
       pipelines:
+        # Traces pipeline
         traces:
           receivers: [otlp, jaeger]
-          processors: [memory_limiter, transform/add_collector_info, batch]
+          processors: [memory_limiter, transform/add_collector_metadata, batch]
           exporters: [otlp/jaeger, logging]
+        
+        # Metrics pipeline  
         metrics:
           receivers: [otlp, prometheus]
           processors: [memory_limiter, batch]
@@ -85,8 +152,15 @@ metadata:
   namespace: observability
   labels:
     app: otel-collector
+    component: collector
+    version: v0.89.0
 spec:
   replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app: otel-collector
@@ -94,69 +168,112 @@ spec:
     metadata:
       labels:
         app: otel-collector
+        component: collector
+        version: v0.89.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8888"
+        prometheus.io/path: "/metrics"
     spec:
+      serviceAccountName: otel-collector
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        fsGroup: 65534
       containers:
       - name: otel-collector
         image: otel/opentelemetry-collector-contrib:0.89.0
+        imagePullPolicy: IfNotPresent
         command:
           - "/otelcol-contrib"
           - "--config=/conf/config.yaml"
         volumeMounts:
         - name: otel-collector-config-vol
           mountPath: /conf
+          readOnly: true
         ports:
-        - containerPort: 4317   # OTLP gRPC receiver
+        - containerPort: 4317
           name: otlp-grpc
-        - containerPort: 4318   # OTLP HTTP receiver
+          protocol: TCP
+        - containerPort: 4318
           name: otlp-http
-        - containerPort: 14250  # Jaeger gRPC
+          protocol: TCP
+        - containerPort: 14250
           name: jaeger-grpc
-        - containerPort: 14268  # Jaeger HTTP
+          protocol: TCP
+        - containerPort: 14268
           name: jaeger-http
-        - containerPort: 6831   # Jaeger compact
+          protocol: TCP
+        - containerPort: 6831
           name: jaeger-compact
-        - containerPort: 8888   # Prometheus metrics
+          protocol: UDP
+        - containerPort: 8888
           name: metrics
-        - containerPort: 8889   # Prometheus exporter
+          protocol: TCP
+        - containerPort: 8889
           name: prom-export
-        - containerPort: 13133  # Health check
+          protocol: TCP
+        - containerPort: 13133
           name: health
-        - containerPort: 1777   # pprof
+          protocol: TCP
+        - containerPort: 1777
           name: pprof
-        - containerPort: 55679  # zpages
+          protocol: TCP
+        - containerPort: 55679
           name: zpages
+          protocol: TCP
         env:
         - name: HOSTNAME
           valueFrom:
             fieldRef:
               fieldPath: metadata.name
-        - name: NODE_IP
+        - name: K8S_NODE_NAME
           valueFrom:
             fieldRef:
-              fieldPath: status.hostIP
-        - name: POD_NAME
+              fieldPath: spec.nodeName
+        - name: K8S_POD_NAME
           valueFrom:
             fieldRef:
               fieldPath: metadata.name
+        - name: K8S_POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: K8S_POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
         resources:
           requests:
-            memory: "128Mi"
-            cpu: "100m"
-          limits:
             memory: "256Mi"
             cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
         livenessProbe:
           httpGet:
             path: /
             port: 13133
           initialDelaySeconds: 30
-          periodSeconds: 30
+          periodSeconds: 15
+          timeoutSeconds: 10
+          failureThreshold: 3
         readinessProbe:
           httpGet:
             path: /
             port: 13133
-          initialDelaySeconds: 5
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 3
+        startupProbe:
+          httpGet:
+            path: /
+            port: 13133
+          initialDelaySeconds: 10
           periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 30
       volumes:
       - name: otel-collector-config-vol
         configMap:
@@ -164,6 +281,54 @@ spec:
           items:
           - key: config.yaml
             path: config.yaml
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: otel-collector
+  namespace: observability
+  labels:
+    app: otel-collector
+    component: serviceaccount
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: otel-collector
+  labels:
+    app: otel-collector
+    component: rbac
+rules:
+- apiGroups: [""]
+  resources: ["pods", "namespaces", "nodes", "services", "endpoints"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["replicasets", "deployments", "daemonsets", "statefulsets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["extensions"]
+  resources: ["replicasets", "deployments", "daemonsets"]
+  verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: otel-collector
+  labels:
+    app: otel-collector
+    component: rbac
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: otel-collector
+subjects:
+- kind: ServiceAccount
+  name: otel-collector
+  namespace: observability
 
 ---
 apiVersion: v1
@@ -173,6 +338,7 @@ metadata:
   namespace: observability
   labels:
     app: otel-collector
+    component: service
   annotations:
     prometheus.io/scrape: "true"
     prometheus.io/port: "8888"
