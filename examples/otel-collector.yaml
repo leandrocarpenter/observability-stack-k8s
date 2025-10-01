@@ -48,8 +48,10 @@ data:
               - set(attributes["collector.processed_at"], Now())
 
     exporters:
-      file:
-        path: /tmp/collector-traces.json
+      otlp/jaeger:
+        endpoint: jaeger-collector.observability.svc.cluster.local:14250
+        tls:
+          insecure: true
       prometheus:
         endpoint: "0.0.0.0:8889"
       logging:
@@ -69,7 +71,7 @@ data:
         traces:
           receivers: [otlp, jaeger]
           processors: [memory_limiter, transform/add_collector_info, batch]
-          exporters: [file, logging]
+          exporters: [otlp/jaeger, logging]
         metrics:
           receivers: [otlp, prometheus]
           processors: [memory_limiter, batch]
