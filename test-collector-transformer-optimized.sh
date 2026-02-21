@@ -1,4 +1,4 @@
-#!/bin/bash
+w#!/bin/bash
 
 # =============================================================================
 # OpenTelemetry Collector Transformer Test Suite

@@ -1,0 +1,265 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sample-nodejs-app
+  namespace: observability
+  labels:
+    app: sample-nodejs-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: sample-nodejs-app
+  template:
+    metadata:
+      labels:
+        app: sample-nodejs-app
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3000"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: nodejs-app
+        image: node:18-alpine
+        ports:
+        - containerPort: 3000
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: APP_NAME
+          value: "sample-nodejs-app"
+        command: ["/bin/sh"]
+        args:
+          - -c
+          - |
+            cd /tmp
+            
+            # Criar package.json
+            cat > package.json << 'EOF'
+            {
+              "name": "observability-demo",
+              "version": "1.0.0",
+              "main": "app.js",
+              "dependencies": {
+                "express": "^4.18.2",
+                "@opentelemetry/api": "^1.6.0",
+                "@opentelemetry/sdk-node": "^0.45.0",
+                "@opentelemetry/exporter-trace-otlp-http": "^0.45.0",
+                "@opentelemetry/resources": "^1.17.0",
+                "@opentelemetry/semantic-conventions": "^1.17.0"
+              }
+            }
+            EOF
+            
+            # Criar configuração OpenTelemetry simplificada
+            cat > tracing.js << 'EOF'
+            const { NodeSDK } = require('@opentelemetry/sdk-node');
+            const { OTLPTraceExporter } = require('@opentelemetry/exporter-trace-otlp-http');
+            const { Resource } = require('@opentelemetry/resources');
+            const { SemanticResourceAttributes } = require('@opentelemetry/semantic-conventions');
+            
+            // Configurar exportador OTLP
+            const traceExporter = new OTLPTraceExporter({
+              url: 'http://otel-collector.observability.svc.cluster.local:4318/v1/traces',
+            });
+            
+            // Configurar SDK mínimo
+            const sdk = new NodeSDK({
+              resource: new Resource({
+                [SemanticResourceAttributes.SERVICE_NAME]: 'nodejs-observability-demo',
+                [SemanticResourceAttributes.SERVICE_VERSION]: '1.0.0',
+              }),
+              traceExporter,
+            });
+            
+            // Inicializar tracing
+            sdk.start();
+            console.log('OpenTelemetry SDK initialized');
+            
+            module.exports = sdk;
+            EOF
+            
+            # Criar aplicação
+            cat > app.js << 'EOF'
+            // Inicializar OpenTelemetry SDK antes de qualquer outra coisa
+            require('./tracing');
+            
+            const express = require('express');
+            const { trace } = require('@opentelemetry/api');
+            const app = express();
+            const port = 3000;
+            
+            let requestCount = 0;
+            const startTime = Date.now();
+            
+            // Obter tracer
+            const tracer = trace.getTracer('nodejs-app', '1.0.0');
+            
+            // Middleware simplificado
+            app.use((req, res, next) => {
+              requestCount++;
+              console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+              
+              // Criar span customizado
+              const span = tracer.startSpan(`${req.method} ${req.path}`, {
+                attributes: {
+                  'http.method': req.method,
+                  'http.url': req.path,
+                  'request.count': requestCount,
+                }
+              });
+              
+              // Adicionar span ao contexto da requisição
+              req.span = span;
+              
+              // Finalizar span quando a resposta terminar
+              res.on('finish', () => {
+                span.setAttributes({
+                  'http.status_code': res.statusCode,
+                });
+                span.end();
+              });
+              
+              next();
+            });
+            
+            // Rotas da aplicação
+            app.get('/', (req, res) => {
+              res.json({ 
+                message: 'Hello from Node.js observability demo!', 
+                timestamp: new Date(),
+                requestCount: requestCount
+              });
+            });
+            
+            app.get('/health', (req, res) => {
+              res.json({ 
+                status: 'healthy', 
+                uptime: process.uptime(),
+                memory: process.memoryUsage(),
+                timestamp: new Date()
+              });
+            });
+            
+            app.get('/metrics', (req, res) => {
+              const uptime = process.uptime();
+              const memory = process.memoryUsage();
+              
+              const metrics = `# HELP http_requests_total Total HTTP requests
+            # TYPE http_requests_total counter
+            http_requests_total ${requestCount}
+            
+            # HELP process_uptime_seconds Process uptime in seconds
+            # TYPE process_uptime_seconds gauge
+            process_uptime_seconds ${uptime}
+            
+            # HELP process_memory_usage_bytes Memory usage in bytes
+            # TYPE process_memory_usage_bytes gauge
+            process_memory_usage_bytes{type="rss"} ${memory.rss}
+            process_memory_usage_bytes{type="heapTotal"} ${memory.heapTotal}
+            process_memory_usage_bytes{type="heapUsed"} ${memory.heapUsed}
+            `;
+              
+              res.set('Content-Type', 'text/plain');
+              res.send(metrics);
+            });
+            
+            app.get('/random', (req, res) => {
+              if (Math.random() < 0.1) {
+                res.status(500).json({ error: 'Random error occurred', timestamp: new Date() });
+              } else {
+                res.json({ random: Math.random(), timestamp: new Date() });
+              }
+            });
+            
+            app.get('/load', (req, res) => {
+              // Criar span filho para operação de carga
+              const childSpan = tracer.startSpan('heavy-computation', {
+                parent: req.span,
+                attributes: {
+                  'operation.type': 'cpu_intensive',
+                  'computation.iterations': 1000000,
+                }
+              });
+              
+              const start = Date.now();
+              // Simular processamento pesado
+              let sum = 0;
+              for (let i = 0; i < 1000000; i++) {
+                sum += Math.random();
+              }
+              const duration = Date.now() - start;
+              
+              // Adicionar informações ao span
+              childSpan.setAttributes({
+                'computation.duration_ms': duration,
+                'computation.result': sum,
+                'computation.completed': true,
+              });
+              childSpan.end();
+              
+              res.json({ 
+                message: 'Load test completed', 
+                duration: duration,
+                result: sum,
+                timestamp: new Date()
+              });
+            });
+            
+            app.get('/info', (req, res) => {
+              res.json({ 
+                app: 'Node.js Observability Demo',
+                version: '1.0.0',
+                env: process.env.NODE_ENV || 'development',
+                nodeVersion: process.version,
+                uptime: process.uptime(),
+                memory: process.memoryUsage(),
+                timestamp: new Date(),
+                pid: process.pid
+              });
+            });
+            
+            app.listen(port, '0.0.0.0', () => {
+              console.log(`App running on port ${port}`);
+              console.log(`Health check: http://localhost:${port}/health`);
+              console.log(`Metrics: http://localhost:${port}/metrics`);
+              console.log(`Ready to accept connections!`);
+            });
+            EOF
+            
+            # Instalar dependências básicas primeiro
+            echo "Installing basic dependencies..."
+            npm install express
+            echo "Installing OpenTelemetry (minimal set)..."
+            npm install @opentelemetry/api @opentelemetry/sdk-node @opentelemetry/exporter-trace-otlp-http @opentelemetry/resources @opentelemetry/semantic-conventions --no-optional
+            echo "Starting application with OpenTelemetry instrumentation..."
+            node app.js
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "200m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sample-nodejs-app-service
+  namespace: observability
+  labels:
+    app: sample-nodejs-app
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "3000"
+    prometheus.io/path: "/metrics"
+spec:
+  selector:
+    app: sample-nodejs-app
+  ports:
+  - protocol: TCP
+    port: 3000
+    targetPort: 3000
+    name: http
+  type: ClusterIP
